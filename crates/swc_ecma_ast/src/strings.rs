@@ -26,6 +26,7 @@ macro_rules! define_ast_string {
             }
 
             #[inline]
+            #[allow(dead_code)]
             pub(crate) const fn from_raw(raw: u64) -> Self {
                 Self {
                     start: raw as u32,
@@ -173,14 +174,14 @@ impl<'a> StringPool<'a> {
 
     /// Canonicalizes a UTF-8 range already stored in this pool.
     #[inline]
-    pub fn intern_utf8_range(&mut self, text: AstUtf8) -> AstInternedUtf8 {
+    pub fn intern_utf8(&mut self, text: AstUtf8) -> AstInternedUtf8 {
         let (start, end) = self.intern_range(text.start, text.end);
         AstInternedUtf8 { start, end }
     }
 
     /// Canonicalizes a WTF-8 range already stored in this pool.
     #[inline]
-    pub fn intern_wtf8_range(&mut self, text: AstWtf8) -> AstWtf8 {
+    pub fn intern_wtf8(&mut self, text: AstWtf8) -> AstWtf8 {
         let (start, end) = self.intern_range(text.start, text.end);
         AstWtf8 { start, end }
     }
