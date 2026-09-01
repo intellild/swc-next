@@ -35,7 +35,7 @@ pub use generated::ast_node::*;
 pub use generated::ast_visitor::*;
 pub use node_id::{AstNode, ExtraDataId, ExtraDataValue, NodeId, SubRange};
 pub use semantic::{ReferenceId, ScopeId, SymbolId};
-pub use strings::{AstUtf8, AstWtf8};
+pub use strings::{AstInternedUtf8, AstUtf8, AstWtf8};
 pub use syntax::*;
 pub use visit::{TraverseAction, TraverseCtx, TraverseMutCtx};
 
@@ -298,6 +298,20 @@ impl<'a> Ast<'a> {
         self.strings.add_utf8(value)
     }
 
+    /// Adds a UTF-8 string to the existing deduplicating string pool and
+    /// marks the returned handle as canonical for identity-based lookup.
+    #[inline]
+    pub fn intern_utf8(&mut self, value: &str) -> AstInternedUtf8 {
+        let value = self.strings.add_utf8(value);
+        AstInternedUtf8::from_raw(value.raw())
+    }
+
+    /// Canonicalizes an existing UTF-8 handle without copying its value into string storage.
+    #[inline]
+    pub fn intern_utf8_range(&mut self, value: AstUtf8) -> AstInternedUtf8 {
+        self.strings.intern_utf8_range(value)
+    }
+
     #[inline]
     pub fn add_wtf8(&mut self, value: &swc_next_allocator::wtf8::Wtf8) -> AstWtf8 {
         self.strings.add_wtf8(value)
@@ -315,6 +329,11 @@ impl<'a> Ast<'a> {
     #[inline]
     pub fn get_wtf8(&self, id: AstWtf8) -> &'a swc_next_allocator::wtf8::Wtf8 {
         self.strings.get_wtf8(id)
+    }
+
+    #[inline]
+    pub fn as_utf8(&self, id: AstWtf8) -> Option<AstUtf8> {
+        self.strings.as_utf8(id)
     }
 
     #[inline]

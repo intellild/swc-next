@@ -32,6 +32,7 @@ macro_rules! define_ast_string {
             }
 
             #[inline]
+            #[allow(dead_code)]
             pub(crate) const fn raw(self) -> u64 {
                 self.start as u64 | ((self.end as u64) << 32)
             }
@@ -40,11 +41,32 @@ macro_rules! define_ast_string {
 }
 
 define_ast_string!(AstUtf8);
+define_ast_string!(AstInternedUtf8);
 define_ast_string!(AstWtf8);
+
+impl From<AstInternedUtf8> for AstUtf8 {
+    #[inline]
+    fn from(value: AstInternedUtf8) -> Self {
+        Self {
+            start: value.start,
+            end: value.end,
+        }
+    }
+}
 
 impl From<AstUtf8> for AstWtf8 {
     #[inline]
     fn from(value: AstUtf8) -> Self {
+        Self {
+            start: value.start,
+            end: value.end,
+        }
+    }
+}
+
+impl From<AstInternedUtf8> for AstWtf8 {
+    #[inline]
+    fn from(value: AstInternedUtf8) -> Self {
         Self {
             start: value.start,
             end: value.end,
@@ -156,6 +178,39 @@ impl<'a> StringPool<'a> {
     pub fn add_wtf8(&mut self, text: &Wtf8) -> AstWtf8 {
         let (start, end) = self.add_bytes(text.as_bytes());
         AstWtf8 { start, end }
+    }
+
+    /// Canonicalizes a UTF-8 range already stored in this pool.
+    #[inline]
+    pub fn intern_utf8_range(&mut self, text: AstUtf8) -> AstInternedUtf8 {
+        let (start, end) = self.intern_range(text.start, text.end);
+        AstInternedUtf8 { start, end }
+    }
+
+    /// Canonicalizes a WTF-8 range already stored in this pool.
+    #[inline]
+    pub fn intern_wtf8_range(&mut self, text: AstWtf8) -> AstWtf8 {
+        let (start, end) = self.intern_range(text.start, text.end);
+        AstWtf8 { start, end }
+    }
+
+    fn intern_range(&mut self, start: u32, end: u32) -> (u32, u32) {
+        if start == end {
+            return (0, 0);
+        }
+        if let Some(id) = {
+            let text = self.get_bytes(start, end);
+            self.dedup.get(text).copied()
+        } {
+            return id;
+        }
+
+        // Keep the original range as the canonical value. Only the hash-map key needs
+        // stable owned bytes; unlike `add_bytes`, this does not append another copy to `extra`.
+        let mut key = ArenaVec::with_capacity_in((end - start) as usize, self.allocator);
+        key.extend_from_slice(self.get_bytes(start, end));
+        self.dedup.insert(key, (start, end));
+        (start, end)
     }
 
     fn add_bytes(&mut self, text: &[u8]) -> (u32, u32) {

@@ -21,10 +21,12 @@
 
 use swc_next_allocator::{
     Idx, IndexSlice,
-    hash_map::{HashMap as ArenaHashMap, Values},
+    hash_map::{HashMap as ArenaHashMap, Iter, Values},
     vec::{ArenaIndexVec, ArenaVec},
 };
-use swc_next_ecma_ast::{Ast, AstWtf8, Diagnostic, NodeId, ScopeId, SymbolId, VisitWith};
+use swc_next_ecma_ast::{
+    Ast, AstInternedUtf8, AstWtf8, Diagnostic, NodeId, ScopeId, SymbolId, VisitWith,
+};
 
 use crate::{
     binder::{Range, TsMemberIndex},
@@ -468,7 +470,7 @@ impl<'a> Semantic<'a> {
     pub fn lookup(
         &self,
         scope_id: ScopeId,
-        name: &[u8],
+        name: impl Into<SymbolName>,
         space: ReferenceSpace,
     ) -> Option<SymbolId> {
         self.resolve_name(scope_id, name, space).candidate()
@@ -695,7 +697,7 @@ pub struct AnalyzeOptions {
 /// The checks selected by [`AnalyzeOptions::check_syntax`] report scope-dependent early
 /// errors separately from parser diagnostics. Their messages use
 /// the tree's arena, so the result is valid as long as the tree is alive.
-pub fn analyze<'a>(ast: &Ast<'a>, options: AnalyzeOptions) -> SemanticReturn<'a> {
+pub fn analyze<'a>(ast: &mut Ast<'a>, options: AnalyzeOptions) -> SemanticReturn<'a> {
     let root = ast.root_program();
     let mut builder = SemanticBuilder::new(ast, options.check_syntax);
     root.visit_with(&mut builder);
