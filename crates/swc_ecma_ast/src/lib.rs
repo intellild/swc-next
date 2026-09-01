@@ -298,18 +298,10 @@ impl<'a> Ast<'a> {
         self.strings.add_utf8(value)
     }
 
-    /// Adds a UTF-8 string to the existing deduplicating string pool and
-    /// marks the returned handle as canonical for identity-based lookup.
-    #[inline]
-    pub fn intern_utf8(&mut self, value: &str) -> AstInternedUtf8 {
-        let value = self.strings.add_utf8(value);
-        AstInternedUtf8::from_raw(value.raw())
-    }
-
     /// Canonicalizes an existing UTF-8 handle without copying its value into string storage.
     #[inline]
-    pub fn intern_utf8_range(&mut self, value: AstUtf8) -> AstInternedUtf8 {
-        self.strings.intern_utf8_range(value)
+    pub fn intern_utf8(&mut self, value: AstUtf8) -> AstInternedUtf8 {
+        self.strings.intern_utf8(value)
     }
 
     #[inline]
