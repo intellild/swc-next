@@ -21,10 +21,12 @@
 
 use oxc_index::Idx;
 use swc_next_allocator::{
-    hash_map::{HashMap as ArenaHashMap, Values},
+    hash_map::{HashMap as ArenaHashMap, Iter, Values},
     vec::Vec as ArenaVec,
 };
-use swc_next_ecma_ast::{Ast, Diagnostic, NodeId, ScopeId, SymbolId, VisitWith};
+use swc_next_ecma_ast::{
+    Ast, AstInternedUtf8, AstWtf8, Diagnostic, NodeId, ScopeId, SymbolId, VisitWith,
+};
 
 use crate::{
     binder::{Range, TsMemberIndex},
@@ -471,7 +473,7 @@ impl<'a> Semantic<'a> {
     pub fn lookup(
         &self,
         scope_id: ScopeId,
-        name: &[u8],
+        name: impl Into<SymbolName>,
         space: ReferenceSpace,
     ) -> Option<SymbolId> {
         self.resolve_name(scope_id, name, space).candidate()
@@ -708,7 +710,7 @@ pub struct AnalyzeOptions {
 /// the tree's arena, so the result is valid as long as the tree is alive.
 /// When [`AnalyzeOptions::build_module_record`] is disabled, the returned
 /// module record is empty.
-pub fn analyze<'a>(ast: &Ast<'a>, options: AnalyzeOptions) -> SemanticReturn<'a> {
+pub fn analyze<'a>(ast: &mut Ast<'a>, options: AnalyzeOptions) -> SemanticReturn<'a> {
     let root = ast.root_program();
     let mut visitor = SemanticBuilder::new(ast, options.check_syntax, options.build_module_record);
     root.visit_with(&mut visitor);

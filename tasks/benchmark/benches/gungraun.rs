@@ -93,7 +93,7 @@ fn bench_analyze(ast: Ast<'static>) {
 #[bench::cal_com_tsx(setup_program(CAL_COM_TSX, Lang::Tsx))]
 fn bench_syntax_check(ast: Ast<'static>) {
     black_box(analyze(
-        &ast,
+        &mut ast,
         AnalyzeOptions {
             check_syntax: SyntaxChecks::all(),
             ..AnalyzeOptions::default()

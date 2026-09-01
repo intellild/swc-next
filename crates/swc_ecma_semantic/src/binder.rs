@@ -404,7 +404,7 @@ impl Excludes {
 /// ```
 #[derive(Debug, Clone, Copy)]
 pub struct Reference {
-    pub name: AstUtf8,
+    pub name: AstInternedUtf8,
     /// The scope the reference appears in.
     pub scope: ScopeId,
     /// The referencing node.
@@ -3873,6 +3873,7 @@ impl<'a> SymbolTracker<'a> {
         flags: ReferenceFlags,
     ) -> ReferenceId {
         debug_assert!(node.index() < tree.node_count());
+        let name = self.canonicalize_name(tree, name);
         // Ambient syntax still resolves through the same declaration space,
         // but its erased expressions do not access the binding at runtime.
         // Normalize only actual references instead of checking ambient state
@@ -4023,10 +4024,10 @@ impl<'a> SymbolTracker<'a> {
 
     /// The binding of `name` declared directly in `scope`, excluding
     /// hoisting `var`s passing through.
-    pub fn own_binding(&self, scope: ScopeId, name: &[u8]) -> Option<SymbolId> {
+    pub fn own_binding(&self, scope: ScopeId, name: AstInternedUtf8) -> Option<SymbolId> {
         self.scope_maps
             .get(scope.index())
-            .and_then(|map| map.get(name).copied())
+            .and_then(|map| map.get(&name).copied())
     }
 
     fn symbol_declared_in_scope(&self, symbol: SymbolId, scope: ScopeId) -> bool {
@@ -4106,7 +4107,7 @@ impl<'a> SymbolTracker<'a> {
 
     /// The binding of `name` at `scope`, including a hoisting `var` passing
     /// through on its way to its hoist target.
-    pub fn binding(&self, scope: ScopeId, name: &[u8]) -> Option<SymbolId> {
+    pub fn binding(&self, scope: ScopeId, name: AstInternedUtf8) -> Option<SymbolId> {
         self.own_binding(scope, name).or_else(|| {
             self.hoisting_variables
                 .get(scope.index())
