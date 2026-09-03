@@ -3801,7 +3801,7 @@ impl<'a> SymbolTracker<'a> {
         }
         self.add_reference(
             tree,
-            name,
+            canonical_name,
             current_scope,
             parameter_node,
             ReferenceFlags::default()
@@ -3867,7 +3867,7 @@ impl<'a> SymbolTracker<'a> {
         );
     }
 
-    /// Records an identifier reference at `node` in `scope`.
+    /// Records a reference to an already canonicalized name at `node` in `scope`.
     pub fn add_reference(
         &mut self,
         tree: &Ast<'a>,
@@ -3877,7 +3877,6 @@ impl<'a> SymbolTracker<'a> {
         flags: ReferenceFlags,
     ) -> ReferenceId {
         debug_assert!(node.index() < tree.node_count());
-        let name = self.canonicalize_name(tree, name);
         // Ambient syntax still resolves through the same declaration space,
         // but its erased expressions do not access the binding at runtime.
         // Normalize only actual references instead of checking ambient state
