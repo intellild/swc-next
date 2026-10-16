@@ -297,7 +297,7 @@ impl<'a> Ast<'a> {
 
     /// Canonicalizes an existing UTF-8 handle without copying its value into string storage.
     #[inline]
-    pub fn intern_utf8(&mut self, value: AstUtf8) -> AstInternedUtf8 {
+    pub fn intern_utf8(&self, value: AstUtf8) -> AstInternedUtf8 {
         self.strings.intern_utf8(value)
     }
 
@@ -306,18 +306,24 @@ impl<'a> Ast<'a> {
         self.strings.add_wtf8(value)
     }
 
-    /// Borrows immutable string bytes for the source/allocator lifetime.
-    /// The reference remains valid when strings are added or the AST is dropped.
+    /// Canonicalizes an existing WTF-8 handle without copying its value into string storage.
     #[inline]
-    pub fn get_utf8(&self, id: AstUtf8) -> &'a str {
-        self.strings.get_utf8(id)
+    pub fn intern_wtf8(&self, value: AstWtf8) -> AstWtf8 {
+        self.strings.intern_wtf8(value)
     }
 
     /// Borrows immutable string bytes for the source/allocator lifetime.
     /// The reference remains valid when strings are added or the AST is dropped.
     #[inline]
-    pub fn get_wtf8(&self, id: AstWtf8) -> &'a swc_next_allocator::wtf8::Wtf8 {
-        self.strings.get_wtf8(id)
+    pub fn get_utf8(&self, id: impl Into<AstUtf8>) -> &'a str {
+        self.strings.get_utf8(id.into())
+    }
+
+    /// Borrows immutable string bytes for the source/allocator lifetime.
+    /// The reference remains valid when strings are added or the AST is dropped.
+    #[inline]
+    pub fn get_wtf8(&self, id: impl Into<AstWtf8>) -> &'a swc_next_allocator::wtf8::Wtf8 {
+        self.strings.get_wtf8(id.into())
     }
 
     #[inline]
