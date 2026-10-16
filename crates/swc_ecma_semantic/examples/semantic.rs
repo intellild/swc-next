@@ -10,7 +10,7 @@ use swc_next_allocator::{Allocator, Idx};
 use swc_next_ecma_ast::{Ast, Lang, ScopeId, SourceType};
 use swc_next_ecma_parser::{NoTokenParserConfig, Options as ParserOptions, Parser as EcmaParser};
 use swc_next_ecma_semantic::{
-    AnalyzeOptions, Semantic, SymbolFlags, SyntaxChecks, analyze,
+    AnalyzeOptions, Semantic, SymbolFlags, SymbolName, SyntaxChecks, analyze,
     scope::{Scope, ScopeKind},
 };
 
@@ -67,7 +67,7 @@ impl<'a> ScopesTextWriter<'a> {
             for symbol_id in bindings {
                 let symbol = self.semantic.symbol(symbol_id);
                 let bytes = match symbol.name {
-                    SymbolName::Utf8(name) => self.ast.get_utf8(name.into()).as_bytes(),
+                    SymbolName::Utf8(name) => self.ast.get_utf8(name).as_bytes(),
                     SymbolName::Wtf8(name) => self.ast.get_wtf8(name).as_bytes(),
                 };
                 let name = String::from_utf8_lossy(bytes);
@@ -167,12 +167,12 @@ fn main() -> Result<(), String> {
         preserve_parens: false,
         ..ParserOptions::default()
     };
-    let mut parse =
+    let parse =
         EcmaParser::init(&allocator, &source_text, parse_options, NoTokenParserConfig).parse();
     assert!(parse.diagnostics.is_empty());
 
     let semantic = analyze(
-        &mut parse.ast,
+        &parse.ast,
         AnalyzeOptions {
             check_syntax: SyntaxChecks::all(),
         },

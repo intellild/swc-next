@@ -21,7 +21,7 @@
 
 use swc_next_allocator::{
     Idx, IndexSlice,
-    hash_map::{HashMap as ArenaHashMap, Iter, Values},
+    hash_map::{HashMap as ArenaHashMap, Values},
     vec::{ArenaIndexVec, ArenaVec},
 };
 use swc_next_ecma_ast::{
@@ -59,6 +59,58 @@ type Scopes = IndexSlice<ScopeId, [scope::Scope]>;
 
 // Internal names survive replacement of their scope's ordinary binding.
 type InternalNames<'a> = ArenaHashMap<'a, (ScopeId, AstWtf8), SymbolId>;
+
+/// Canonical name stored for a semantic symbol.
+#[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
+pub enum SymbolName {
+    Utf8(AstInternedUtf8),
+    Wtf8(AstWtf8),
+}
+
+impl From<AstInternedUtf8> for SymbolName {
+    #[inline]
+    fn from(name: AstInternedUtf8) -> Self {
+        Self::Utf8(name)
+    }
+}
+
+impl From<SymbolName> for AstWtf8 {
+    #[inline]
+    fn from(name: SymbolName) -> Self {
+        match name {
+            SymbolName::Utf8(name) => name.into(),
+            SymbolName::Wtf8(name) => name,
+        }
+    }
+}
+
+impl SymbolName {
+    /// Canonicalizes a WTF-8 name into the UTF-8 representation used by
+    /// ordinary bindings whenever its bytes are valid UTF-8.
+    #[inline]
+    pub fn intern_wtf8(ast: &Ast<'_>, name: AstWtf8) -> Self {
+        if let Some(name) = ast.as_utf8(name) {
+            return Self::Utf8(ast.intern_utf8(name));
+        }
+        Self::Wtf8(ast.intern_wtf8(name))
+    }
+
+    #[inline]
+    pub fn as_utf8(self) -> Option<AstInternedUtf8> {
+        match self {
+            Self::Utf8(name) => Some(name),
+            Self::Wtf8(_) => None,
+        }
+    }
+
+    #[inline]
+    pub fn as_wtf8(self) -> Option<AstWtf8> {
+        match self {
+            Self::Utf8(_) => None,
+            Self::Wtf8(name) => Some(name),
+        }
+    }
+}
 
 type ScopeMap<'a> = ArenaHashMap<'a, &'a [u8], SymbolId>;
 type ScopeMaps<'a> = IndexSlice<ScopeId, [ScopeMap<'a>]>;
@@ -470,7 +522,7 @@ impl<'a> Semantic<'a> {
     pub fn lookup(
         &self,
         scope_id: ScopeId,
-        name: impl Into<SymbolName>,
+        name: &[u8],
         space: ReferenceSpace,
     ) -> Option<SymbolId> {
         self.resolve_name(scope_id, name, space).candidate()
@@ -697,7 +749,7 @@ pub struct AnalyzeOptions {
 /// The checks selected by [`AnalyzeOptions::check_syntax`] report scope-dependent early
 /// errors separately from parser diagnostics. Their messages use
 /// the tree's arena, so the result is valid as long as the tree is alive.
-pub fn analyze<'a>(ast: &mut Ast<'a>, options: AnalyzeOptions) -> SemanticReturn<'a> {
+pub fn analyze<'a>(ast: &Ast<'a>, options: AnalyzeOptions) -> SemanticReturn<'a> {
     let root = ast.root_program();
     let mut builder = SemanticBuilder::new(ast, options.check_syntax);
     root.visit_with(&mut builder);

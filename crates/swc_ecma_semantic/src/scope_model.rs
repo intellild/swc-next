@@ -6,7 +6,7 @@
 //! read syntax and coordinate subtree edits through TransformCtx.
 
 use swc_next_allocator::vec::{ArenaIndexVec, ArenaVec};
-use swc_next_ecma_ast::{AstUtf8, NodeId, ReferenceId, ScopeId, SymbolId};
+use swc_next_ecma_ast::{AstInternedUtf8, NodeId, ReferenceId, ScopeId, SymbolId};
 
 use crate::{
     BindingIterator, Declaration, DeclarationId, DeclarationIdIterator, DeclarationIterator,
@@ -217,7 +217,7 @@ impl<'a> ScopeModel<'a> {
         &mut self,
         scope: ScopeId,
         node: NodeId,
-        name: AstUtf8,
+        name: AstInternedUtf8,
         text: &'a str,
         flags: SymbolFlags,
     ) -> SymbolId {

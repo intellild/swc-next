@@ -136,7 +136,7 @@ fn bench_analyze(ast: Ast<'static>) {
 #[bench::typescript_checker(setup_program(TYPESCRIPT_CHECKER, Lang::Ts))]
 fn bench_syntax_check(ast: Ast<'static>) {
     black_box(analyze(
-        &mut ast,
+        &ast,
         AnalyzeOptions {
             check_syntax: SyntaxChecks::all(),
         },
