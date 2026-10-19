@@ -61,7 +61,7 @@ oxc_index::define_nonmax_u32_index_type! {
 }
 
 // Internal names survive replacement of their scope's ordinary binding.
-type InternalNames<'a> = ArenaHashMap<'a, (ScopeId, AstWtf8), SymbolId>;
+type InternalNames<'a> = ArenaHashMap<'a, (ScopeId, SymbolName), SymbolId>;
 
 /// Canonical name stored for a semantic symbol.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
