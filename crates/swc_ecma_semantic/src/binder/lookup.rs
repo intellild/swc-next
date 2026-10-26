@@ -450,9 +450,7 @@ fn lookup_scope_binding<const TS_LOOKUP: bool>(
     }
     // Flattened internal names remain an outer fallback when a same-named
     // type parameter or a declaration hidden from a signature is rejected.
-    let &internal_name = lexical
-        .internal_names
-        .get(&(current, symbols[symbol].name))?;
+    let &internal_name = lexical.internal_names.get(&(current, query.key))?;
     if internal_name == symbol {
         return None;
     }

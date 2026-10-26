@@ -141,9 +141,7 @@ impl<'a> ScopeModel<'a> {
     /// recorded at their hoist target; passing-through hoisting occurrences
     /// and TypeScript source-export and member views are not retained by this model.
     pub fn binding(&self, scope: ScopeId, name: &[u8]) -> Option<SymbolId> {
-        self.scope_maps[scope]
-            .get(&self.names.get(name)?)
-            .copied()
+        self.scope_maps[scope].get(&self.names.get(name)?).copied()
     }
 
     /// Every lexical symbol owned directly by `scope`. A hoisting `var`

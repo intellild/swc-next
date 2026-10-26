@@ -23,7 +23,7 @@ use swc_next_ecma_ast::{
 
 use crate::{
     DeclarationId, Declarations, HoistingMap, NodeSemanticId, Redeclarations, ScopeMap, ScopeMaps,
-    Scopes, Semantic, Symbols, SymbolName,
+    Scopes, Semantic, SymbolName, Symbols,
     scope::{Scope, ScopeKind, ScopeTree},
 };
 
@@ -2903,10 +2903,11 @@ impl<'a> SymbolTracker<'a> {
             .environment(environment)
             .get(name_text)
             .map(|entry| entry.symbol);
-        let local = self.own_binding(current_scope, name_text);
+        let name = SymbolName::intern_wtf8(tree, name);
+        let local = self.own_binding(current_scope, name.into());
         let prepared = PreparedDeclaration {
             declaration: PendingDeclaration {
-                name: SymbolName::intern_wtf8(tree, name),
+                name,
                 node: member.node_id(),
                 binding: PendingBinding {
                     flags,
@@ -3411,7 +3412,7 @@ impl<'a> SymbolTracker<'a> {
                     .ts_type_parameters
                     .entry(owner)
                     .or_insert_with(|| ScopeMap::new_in(self.allocator));
-                let name = self.symbols[id.index()].name.into();
+                let name = self.symbols[id].name.into();
                 if !parameters.contains_key(&name) {
                     parameters.insert(name, id);
                 }
@@ -3618,7 +3619,7 @@ impl<'a> SymbolTracker<'a> {
         if symbol.flags.intersects(SymbolFlags::INTERNAL_NAME) {
             let scope = self.declarations[symbol.declaration].scope;
             self.internal_names
-                .entry((scope, symbol.name))
+                .entry((scope, symbol.name.into()))
                 .or_insert(id);
         }
     }
@@ -4089,7 +4090,10 @@ impl<'a> SymbolTracker<'a> {
     /// The binding of `name` at `scope`, including a hoisting `var` passing
     /// through on its way to its hoist target.
     pub fn binding(&self, scope: ScopeId, name: &[u8]) -> Option<SymbolId> {
-        let name = self.names.get(name)?;
+        self.binding_key(scope, self.names.get(name)?)
+    }
+
+    fn binding_key(&self, scope: ScopeId, name: AstWtf8) -> Option<SymbolId> {
         self.own_binding(scope, name).or_else(|| {
             self.hoisting_declaration(scope, name)
                 .map(|declaration| self.declarations[declaration].symbol)

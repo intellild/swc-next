@@ -90,7 +90,10 @@ impl<'traverse, 'a> SemanticBuilder<'traverse, 'a> {
             }
         }
 
-        if let Some(existing) = self.symbols.hoisting_conflict(prepared, name) {
+        if let Some(existing) = self
+            .symbols
+            .hoisting_conflict(prepared, prepared.name().into())
+        {
             self.report_redeclaration(self.ast, name, node, existing.node, existing.flags);
             return;
         }
@@ -171,7 +174,8 @@ impl<'traverse, 'a> SemanticBuilder<'traverse, 'a> {
                 if scope_id == target {
                     break;
                 }
-                let Some(symbol_id) = self.symbols.own_binding(scope_id, prepared.name().into()) else {
+                let Some(symbol_id) = self.symbols.own_binding(scope_id, prepared.name().into())
+                else {
                     continue;
                 };
                 let existing = self.symbols.symbol(symbol_id);

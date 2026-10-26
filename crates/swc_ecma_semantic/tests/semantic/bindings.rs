@@ -33,8 +33,6 @@ fn canonical_names_across_analysis() {
     assert_eq!(changed.binding(ScopeId::ROOT, b"value"), Some(symbol));
 }
 
-
-
 #[test]
 fn canonical_names() {
     let allocator = Allocator::new();
@@ -56,8 +54,6 @@ fn canonical_names() {
     assert!(matches!(member.symbol.name, SymbolName::Wtf8(_)));
     assert_eq!(ast.get_wtf8(member.symbol.name).as_bytes(), b"\xed\xa0\x80");
 }
-
-
 
 #[test]
 fn hoisting_variables_keep_lexical_bindings() {
