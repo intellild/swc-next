@@ -1887,7 +1887,7 @@ pub(crate) struct PendingBinding {
 
 #[derive(Clone, Copy)]
 struct PendingDeclaration {
-    name: AstWtf8,
+    name: SymbolName,
     node: NodeId,
     binding: PendingBinding,
 }
@@ -1941,7 +1941,7 @@ enum DeclarationConflictKind {
 }
 
 impl PreparedDeclaration {
-    pub(crate) fn name(self) -> AstWtf8 {
+    pub(crate) fn name(self) -> SymbolName {
         self.declaration.name
     }
 
@@ -2061,7 +2061,7 @@ impl<'a> SymbolTracker<'a> {
         let (owner, _) = self.declare_symbol(
             tree,
             PendingDeclaration {
-                name: tree.empty_wtf8(),
+                name: SymbolName::Utf8(AstInternedUtf8::EMPTY),
                 node: program.node_id(),
                 binding: PendingBinding {
                     flags: SymbolFlags::VALUE_MODULE | SymbolFlags::NAMESPACE_MODULE,
@@ -2579,7 +2579,7 @@ impl<'a> SymbolTracker<'a> {
         let (owner, _) = self.declare_symbol(
             tree,
             PendingDeclaration {
-                name: identifier.name(tree).into(),
+                name: tree.intern_utf8(identifier.name(tree)).into(),
                 node: identifier.node_id(),
                 binding: PendingBinding {
                     flags: SymbolFlags::NAMESPACE_MODULE | SymbolFlags::AMBIENT,
@@ -2745,12 +2745,12 @@ impl<'a> SymbolTracker<'a> {
     pub(crate) fn prepare_declaration(
         &self,
         tree: &Ast<'a>,
-        name: AstWtf8,
+        name: SymbolName,
         node: NodeId,
     ) -> PreparedDeclaration {
         let name_text = tree.get_wtf8(name).as_bytes();
         let local = self
-            .own_binding(self.pending.scope, name_text)
+            .own_binding(self.pending.scope, name.into())
             .filter(|&symbol| {
                 !self.symbols[symbol]
                     .flags
@@ -2764,11 +2764,10 @@ impl<'a> SymbolTracker<'a> {
                 .map(|default| default.symbol);
             (DeclarationDestination::TsDefaultExport, shared, shared)
         } else if let Some(owner) = self.pending_type_parameter_owner() {
-            let shared = self.ts_type_parameters.get(&owner).and_then(|parameters| {
-                self.names
-                    .get(name_text)
-                    .and_then(|key| parameters.get(&key).copied())
-            });
+            let shared = self
+                .ts_type_parameters
+                .get(&owner)
+                .and_then(|parameters| parameters.get(&AstWtf8::from(name)).copied());
             (
                 DeclarationDestination::TsTypeParameter { owner },
                 shared,
@@ -2791,7 +2790,9 @@ impl<'a> SymbolTracker<'a> {
             let shared = self
                 .ts_member_environments
                 .member(environment, name_text)
-                .or_else(|| projection_scope.and_then(|scope| self.binding(scope, name_text)));
+                .or_else(|| {
+                    projection_scope.and_then(|scope| self.binding_key(scope, name.into()))
+                });
             (
                 DeclarationDestination::TsMember {
                     environment,
@@ -2867,7 +2868,7 @@ impl<'a> SymbolTracker<'a> {
             return;
         };
         debug_assert_eq!(prepared.node(), node);
-        debug_assert_eq!(prepared.name(), name.into());
+        debug_assert_eq!(prepared.name(), SymbolName::Utf8(tree.intern_utf8(name)));
         let declaration_id = self.declare_prepared(tree, prepared);
         self.finish_binding_identifier(tree, name, declaration_id, scope, current_scope);
     }
@@ -2905,7 +2906,7 @@ impl<'a> SymbolTracker<'a> {
         let local = self.own_binding(current_scope, name_text);
         let prepared = PreparedDeclaration {
             declaration: PendingDeclaration {
-                name,
+                name: SymbolName::intern_wtf8(tree, name),
                 node: member.node_id(),
                 binding: PendingBinding {
                     flags,
@@ -3014,7 +3015,7 @@ impl<'a> SymbolTracker<'a> {
             return declaration_id;
         }
 
-        self.declare_ts_context_binding(tree, name.into(), node)
+        self.declare_ts_context_binding(tree, canonical.into(), node)
     }
 
     fn record_ts_scope_views(&mut self, scope: ScopeId, views: Range) {
@@ -3147,7 +3148,7 @@ impl<'a> SymbolTracker<'a> {
                     let mut flags = self.pending.flags;
                     flags.insert(SymbolFlags::EXPORTED);
                     let declaration = PendingDeclaration {
-                        name,
+                        name: SymbolName::intern_wtf8(tree, name),
                         node,
                         binding: PendingBinding {
                             flags,
@@ -3181,7 +3182,7 @@ impl<'a> SymbolTracker<'a> {
         self.declare_symbol(
             tree,
             PendingDeclaration {
-                name: identifier.name(tree).into(),
+                name: tree.intern_utf8(identifier.name(tree)).into(),
                 node: identifier.node_id(),
                 binding: PendingBinding {
                     flags: SymbolFlags::UMD_EXPORT,
@@ -3219,7 +3220,7 @@ impl<'a> SymbolTracker<'a> {
             return;
         }
         let declaration = PendingDeclaration {
-            name: tree.empty_wtf8(),
+            name: SymbolName::Utf8(AstInternedUtf8::EMPTY),
             node,
             binding: PendingBinding {
                 flags: self.pending.flags | SymbolFlags::EXPORTED | SymbolFlags::IS_DEFAULT,
@@ -3330,7 +3331,11 @@ impl<'a> SymbolTracker<'a> {
         let symbol = self
             .symbol_of_node(name.node_id())
             .expect("the infer parameter is already declared");
-        self.insert_scope_binding(tree, current_scope, name.name(tree).into(), symbol);
+        self.insert_scope_binding(
+            current_scope,
+            tree.intern_utf8(name.name(tree)).into(),
+            symbol,
+        );
     }
 
     #[inline(always)]
@@ -3382,7 +3387,7 @@ impl<'a> SymbolTracker<'a> {
     fn declare_ts_context_binding(
         &mut self,
         tree: &Ast<'a>,
-        name: AstWtf8,
+        name: SymbolName,
         node: NodeId,
     ) -> DeclarationId {
         let plan = self.prepare_declaration(tree, name, node);
@@ -3400,12 +3405,7 @@ impl<'a> SymbolTracker<'a> {
                 let (id, declaration_id) =
                     self.declare_symbol(tree, declaration, plan.existing, true);
                 if plan.local.is_none() {
-                    self.insert_scope_binding(
-                        tree,
-                        declaration.binding.scope,
-                        declaration.name,
-                        id,
-                    );
+                    self.insert_scope_binding(declaration.binding.scope, declaration.name, id);
                 }
                 let parameters = self
                     .ts_type_parameters
@@ -3422,12 +3422,7 @@ impl<'a> SymbolTracker<'a> {
                     self.declare_symbol(tree, plan.declaration, plan.existing, true);
                 if plan.existing.is_none() {
                     let declaration = plan.declaration;
-                    self.insert_scope_binding(
-                        tree,
-                        declaration.binding.scope,
-                        declaration.name,
-                        id,
-                    );
+                    self.insert_scope_binding(declaration.binding.scope, declaration.name, id);
                 }
                 declaration_id
             }
@@ -3457,7 +3452,7 @@ impl<'a> SymbolTracker<'a> {
         let name_text = tree.get_wtf8(name).as_bytes();
         let environment = self.ts_member_environments.ensure(owner, self.allocator);
         let shared_existing = self.ts_member_environments.member(environment, name_text);
-        let local_existing = actual_scope.and_then(|scope| self.own_binding(scope, name_text));
+        let local_existing = actual_scope.and_then(|scope| self.own_binding(scope, name.into()));
         let target = actual_scope.unwrap_or(declaration.binding.scope);
         let mut declaration = declaration;
         declaration.binding.scope = target;
@@ -3503,10 +3498,10 @@ impl<'a> SymbolTracker<'a> {
         if merges {
             self.record_ts_member(environment, name_text, id, kind, declaration.binding.flags);
             if let Some(scope) = projection_scope {
-                if let Some(projected) = self.binding(scope, name_text) {
+                if let Some(projected) = self.binding_key(scope, name.into()) {
                     debug_assert_eq!(projected, id);
                 } else {
-                    self.insert_scope_binding(tree, scope, name, id);
+                    self.insert_scope_binding(scope, name, id);
                 }
             }
         }
@@ -3594,7 +3589,7 @@ impl<'a> SymbolTracker<'a> {
         } else {
             let new_id = self.symbols.next_idx();
             self.symbols.push(Symbol {
-                name: SymbolName::intern_wtf8(tree, name),
+                name,
                 flags: declaration_flags,
                 declaration: declaration_id,
             });
@@ -3629,14 +3624,8 @@ impl<'a> SymbolTracker<'a> {
     }
 
     #[inline(always)]
-    fn insert_scope_binding(
-        &mut self,
-        tree: &Ast<'a>,
-        scope: ScopeId,
-        name: AstWtf8,
-        id: SymbolId,
-    ) {
-        let name = tree.intern_wtf8(name);
+    fn insert_scope_binding(&mut self, scope: ScopeId, name: SymbolName, id: SymbolId) {
+        let name = name.into();
         self.scope_maps[scope].insert(name, id);
     }
 
@@ -3804,7 +3793,7 @@ impl<'a> SymbolTracker<'a> {
         } else {
             current_scope
         };
-        let Some(parameter) = self.own_binding(parameter_scope, tree.get_utf8(name).as_bytes())
+        let Some(parameter) = self.own_binding(parameter_scope, tree.intern_utf8(name).into())
         else {
             return;
         };
@@ -4016,8 +4005,7 @@ impl<'a> SymbolTracker<'a> {
 
     /// The binding of `name` declared directly in `scope`, excluding
     /// hoisting `var`s passing through.
-    pub fn own_binding(&self, scope: ScopeId, name: &[u8]) -> Option<SymbolId> {
-        let name = self.names.get(name)?;
+    pub fn own_binding(&self, scope: ScopeId, name: AstWtf8) -> Option<SymbolId> {
         self.scope_maps
             .get(scope)
             .and_then(|map| map.get(&name).copied())
@@ -4108,17 +4096,17 @@ impl<'a> SymbolTracker<'a> {
         })
     }
 
-    fn hoisting_declaration(&self, scope: ScopeId, name: &[u8]) -> Option<DeclarationId> {
+    fn hoisting_declaration(&self, scope: ScopeId, name: AstWtf8) -> Option<DeclarationId> {
         self.hoisting_variables
             .get(scope)
             .and_then(Option::as_deref)
-            .and_then(|map| map.get(name).copied())
+            .and_then(|map| map.get(&name).copied())
     }
 
     pub(crate) fn hoisting_conflict(
         &self,
         prepared: PreparedDeclaration,
-        name: &[u8],
+        name: AstWtf8,
     ) -> Option<Declaration> {
         // Passing vars are conflict-only declarations, never binding candidates.
         // Only declarations that exclude var need the scope's hoisting map.

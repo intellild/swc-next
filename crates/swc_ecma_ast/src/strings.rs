@@ -131,6 +131,20 @@ pub(crate) struct StringPool<'a> {
 }
 
 impl<'a> StringPool<'a> {
+    pub fn reserve_interned_ranges(&self, capacity: usize) {
+        // SAFETY: same arena-owned, non-Sync table used by intern_range; no
+        // references into it escape this call.
+        let ranges = unsafe {
+            &mut *self
+                .interned_ranges
+                .cast::<ArenaHashMap<'a, u64, (u32, u32)>>()
+        };
+        if capacity > ranges.capacity() {
+            let additional = capacity.saturating_sub(ranges.len());
+            ranges.reserve(additional);
+        }
+    }
+
     pub fn lookup(&self) -> AstStringLookup<'a> {
         AstStringLookup {
             dedup: self.dedup,

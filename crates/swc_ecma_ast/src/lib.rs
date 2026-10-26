@@ -320,6 +320,12 @@ impl<'a> Ast<'a> {
         self.strings.lookup()
     }
 
+    /// Reserves space for at least this many cached string ranges in total.
+    /// Existing cached ranges remain valid; parser-only users need not reserve.
+    pub fn reserve_string_interning(&self, capacity: usize) {
+        self.strings.reserve_interned_ranges(capacity);
+    }
+
     /// Borrows immutable string bytes for the source/allocator lifetime.
     /// The reference remains valid when strings are added or the AST is dropped.
     #[inline]
