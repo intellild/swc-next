@@ -1,4 +1,9 @@
-use swc_next_allocator::{Allocator, hash_map::HashMap as ArenaHashMap, vec::ArenaVec, wtf8::Wtf8};
+use swc_next_allocator::{
+    Allocator,
+    hash_map::{EntryRef, HashMap as ArenaHashMap},
+    vec::ArenaVec,
+    wtf8::Wtf8,
+};
 
 macro_rules! define_ast_string {
     ($name:ident) => {
@@ -290,19 +295,27 @@ impl<'a> StringPool<'a> {
         *ranges
             .entry(AstUtf8 { start, end }.raw())
             .or_insert_with(|| {
-                if let Some(id) = {
-                    let text = self.get_bytes(start, end);
-                    self.dedup_get(text)
-                } {
-                    return id;
+                let text = self.get_bytes(start, end);
+                // SAFETY: this is the separate arena-owned content table. No
+                // references to its entries escape, and allocating its owned
+                // key does not access either interning table.
+                let dedup = unsafe {
+                    &mut *self
+                        .dedup
+                        .cast::<ArenaHashMap<'a, ArenaVec<'a, u8>, (u32, u32)>>()
+                };
+                match dedup.entry_ref(text) {
+                    EntryRef::Occupied(entry) => *entry.get(),
+                    EntryRef::Vacant(entry) => {
+                        // Retain the original range. Only the map key needs
+                        // stable owned bytes; reuse the lookup hash on insertion.
+                        let mut key = ArenaVec::with_capacity_in(text.len(), self.allocator);
+                        key.extend_from_slice(text);
+                        // SAFETY: key is an exact copy of the queried bytes,
+                        // so checking equivalence again would repeat the work.
+                        *unsafe { entry.insert_with_key_unchecked(key, (start, end)) }
+                    }
                 }
-
-                // Keep the original range as the canonical value. Only the hash-map key needs
-                // stable owned bytes; unlike `add_bytes`, this does not append another copy to `extra`.
-                let mut key = ArenaVec::with_capacity_in((end - start) as usize, self.allocator);
-                key.extend_from_slice(self.get_bytes(start, end));
-                self.dedup_insert(key, (start, end));
-                (start, end)
             })
     }
 
