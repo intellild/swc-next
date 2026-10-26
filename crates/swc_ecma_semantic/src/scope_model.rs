@@ -6,7 +6,7 @@
 //! read syntax and coordinate subtree edits through TransformCtx.
 
 use swc_next_allocator::vec::{ArenaIndexVec, ArenaVec};
-use swc_next_ecma_ast::{AstInternedUtf8, NodeId, ReferenceId, ScopeId, SymbolId};
+use swc_next_ecma_ast::{AstInternedUtf8, AstStringLookup, NodeId, ReferenceId, ScopeId, SymbolId};
 
 use crate::{
     BindingIterator, Declaration, DeclarationId, DeclarationIdIterator, DeclarationIterator,
@@ -22,6 +22,7 @@ use crate::{
 /// name-resolution queries or AST traversal.
 #[derive(Debug)]
 pub struct ScopeModel<'a> {
+    names: AstStringLookup<'a>,
     scopes: ScopeTree<'a>,
     symbols: ArenaIndexVec<'a, SymbolId, Symbol>,
     references: ArenaIndexVec<'a, ReferenceId, Reference>,
@@ -52,6 +53,7 @@ impl<'a> ScopeModel<'a> {
         );
 
         Self {
+            names: semantic.names,
             scopes: semantic.scopes,
             symbols: semantic.symbols,
             references: semantic.references,
@@ -139,7 +141,9 @@ impl<'a> ScopeModel<'a> {
     /// recorded at their hoist target; passing-through hoisting occurrences
     /// and TypeScript source-export and member views are not retained by this model.
     pub fn binding(&self, scope: ScopeId, name: &[u8]) -> Option<SymbolId> {
-        self.scope_maps[scope].get(name).copied()
+        self.scope_maps[scope]
+            .get(&self.names.get(name)?)
+            .copied()
     }
 
     /// Every lexical symbol owned directly by `scope`. A hoisting `var`
@@ -201,7 +205,7 @@ impl<'a> ScopeModel<'a> {
         }
     }
 
-    /// Register a declaration and its scope binding using the caller-supplied name, text and flags.
+    /// Register a declaration and its scope binding using the canonical name and flags.
     ///
     /// ```javascript
     /// // Before: the transform has no temporary binding.
@@ -209,7 +213,7 @@ impl<'a> ScopeModel<'a> {
     /// // After: the caller allocates and attaches a temporary declaration.
     /// var _temp;
     /// run();
-    /// // Register _temp's node, name handle, arena-lived text and var flags in its hoist scope.
+    /// // Register _temp's node, canonical name and var flags in its hoist scope.
     /// // Reuse the symbol for an existing same-name binding and record the new declaration.
     /// // Grow through this node only; the caller registers other allocations separately.
     /// ```
@@ -218,7 +222,6 @@ impl<'a> ScopeModel<'a> {
         scope: ScopeId,
         node: NodeId,
         name: AstInternedUtf8,
-        text: &'a str,
         flags: SymbolFlags,
     ) -> SymbolId {
         debug_assert!(self.scope(scope).active);
@@ -227,7 +230,9 @@ impl<'a> ScopeModel<'a> {
             return symbol;
         }
         let declaration = self.declarations.next_idx();
-        let previous = self.binding(scope, text.as_bytes());
+        let previous = self.scope_maps[scope]
+            .get(&swc_next_ecma_ast::AstWtf8::from(name))
+            .copied();
         let existing = previous.filter(|&symbol| {
             !self
                 .symbol(symbol)
@@ -244,12 +249,12 @@ impl<'a> ScopeModel<'a> {
         } else {
             let symbol = self.symbols.next_idx();
             self.symbols.push(Symbol {
-                name: previous.map_or(name.into(), |symbol| self.symbol(symbol).name),
+                name: name.into(),
                 flags,
                 declaration,
             });
             self.uses.push(ArenaVec::new_in(self.symbols.bump()));
-            self.scope_maps[scope].insert(text.as_bytes(), symbol);
+            self.scope_maps[scope].insert(name.into(), symbol);
             symbol
         };
         self.declarations.push(Declaration {

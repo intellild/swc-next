@@ -1,6 +1,41 @@
 use super::*;
 
 #[test]
+fn canonical_names_across_analysis() {
+    let allocator = Allocator::new();
+    let script = Options {
+        source_type: SourceType::Script,
+        ..Options::default()
+    };
+    let (mut ast, first) = analyze_source(&allocator, "let value; v\\u0061lue;", script);
+    let symbol = first.binding(ScopeId::ROOT, b"value").unwrap();
+    let reference = first.iter_references().next().unwrap().reference;
+    let second = analyze(&ast, AnalyzeOptions::default()).semantic;
+    let repeated = second.iter_references().next().unwrap().reference;
+    assert_eq!(repeated.name, reference.name);
+    assert_eq!(repeated.symbol, Some(symbol));
+    assert_eq!(
+        second.lookup(ScopeId::ROOT, b"value", ReferenceSpace::Value),
+        Some(symbol)
+    );
+
+    let swc_next_ecma_ast::NodeKindData::IdentifierReference(identifier) =
+        ast.kind_data(reference.node)
+    else {
+        unreachable!()
+    };
+    let renamed = ast.add_utf8("missing");
+    identifier.set_name(&mut ast, renamed);
+    let changed = analyze(&ast, AnalyzeOptions::default()).semantic;
+    let reference = changed.iter_references().next().unwrap().reference;
+    assert_eq!(ast.get_utf8(reference.name), "missing");
+    assert_eq!(reference.symbol, None);
+    assert_eq!(changed.binding(ScopeId::ROOT, b"value"), Some(symbol));
+}
+
+
+
+#[test]
 fn canonical_names() {
     let allocator = Allocator::new();
     let script = Options {

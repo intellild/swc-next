@@ -30,6 +30,33 @@ define_ast_string!(AstUtf8);
 define_ast_string!(AstInternedUtf8);
 define_ast_string!(AstWtf8);
 
+/// Read-only access to canonical ranges in an AST's arena-owned string table.
+/// The view remains valid when the AST grows or is dropped before its arena.
+#[derive(Clone, Copy, Debug)]
+pub struct AstStringLookup<'a> {
+    dedup: *mut (),
+    marker: std::marker::PhantomData<&'a Allocator>,
+}
+
+impl AstStringLookup<'_> {
+    /// Finds a previously interned value without adding it to the table.
+    #[inline]
+    pub fn get(self, text: &[u8]) -> Option<AstWtf8> {
+        if text.is_empty() {
+            return Some(AstWtf8::EMPTY);
+        }
+        // SAFETY: the table and its owned keys live in the arena. No reference
+        // into the table escapes this call. The raw pointer prevents Send/Sync.
+        unsafe {
+            &*self
+                .dedup
+                .cast::<ArenaHashMap<'_, ArenaVec<'_, u8>, (u32, u32)>>()
+        }
+        .get(text)
+        .map(|&(start, end)| AstWtf8 { start, end })
+    }
+}
+
 impl AstUtf8 {
     #[inline]
     pub(crate) const fn from_raw(raw: u64) -> Self {
@@ -98,18 +125,30 @@ pub(crate) struct StringPool<'a> {
     // is mutated only through `dedup`, and raw mutable pointers make the pool
     // non-`Sync`, so safe code cannot intern concurrently.
     dedup: *mut (),
+    // Memoize immutable ranges, including aliases of the canonical range. A
+    // second semantic pass must not hash their contents again.
+    interned_ranges: *mut (),
 }
 
 impl<'a> StringPool<'a> {
+    pub fn lookup(&self) -> AstStringLookup<'a> {
+        AstStringLookup {
+            dedup: self.dedup,
+            marker: std::marker::PhantomData,
+        }
+    }
     pub fn new_in(allocator: &'a Allocator, source: &'a str) -> Self {
         assert!(source.len() <= u32::MAX as usize);
         let dedup: &'a mut ArenaHashMap<'a, ArenaVec<'a, u8>, (u32, u32)> =
+            allocator.alloc(ArenaHashMap::new_in(allocator));
+        let interned_ranges: &'a mut ArenaHashMap<'a, u64, (u32, u32)> =
             allocator.alloc(ArenaHashMap::new_in(allocator));
         Self {
             source,
             allocator,
             extra: ArenaVec::new_in(allocator),
             dedup: (dedup as *mut ArenaHashMap<'a, ArenaVec<'a, u8>, (u32, u32)>).cast(),
+            interned_ranges: (interned_ranges as *mut ArenaHashMap<'a, u64, (u32, u32)>).cast(),
         }
     }
 
@@ -227,19 +266,30 @@ impl<'a> StringPool<'a> {
         if start == end {
             return (0, 0);
         }
-        if let Some(id) = {
-            let text = self.get_bytes(start, end);
-            self.dedup_get(text)
-        } {
-            return id;
-        }
+        // SAFETY: this arena allocation outlives the pool; the pool is not
+        // Sync and neither content lookup nor insertion accesses this map.
+        let ranges = unsafe {
+            &mut *self
+                .interned_ranges
+                .cast::<ArenaHashMap<'a, u64, (u32, u32)>>()
+        };
+        *ranges
+            .entry(AstUtf8 { start, end }.raw())
+            .or_insert_with(|| {
+                if let Some(id) = {
+                    let text = self.get_bytes(start, end);
+                    self.dedup_get(text)
+                } {
+                    return id;
+                }
 
-        // Keep the original range as the canonical value. Only the hash-map key needs
-        // stable owned bytes; unlike `add_bytes`, this does not append another copy to `extra`.
-        let mut key = ArenaVec::with_capacity_in((end - start) as usize, self.allocator);
-        key.extend_from_slice(self.get_bytes(start, end));
-        self.dedup_insert(key, (start, end));
-        (start, end)
+                // Keep the original range as the canonical value. Only the hash-map key needs
+                // stable owned bytes; unlike `add_bytes`, this does not append another copy to `extra`.
+                let mut key = ArenaVec::with_capacity_in((end - start) as usize, self.allocator);
+                key.extend_from_slice(self.get_bytes(start, end));
+                self.dedup_insert(key, (start, end));
+                (start, end)
+            })
     }
 
     fn add_bytes(&mut self, text: &[u8]) -> (u32, u32) {
@@ -347,5 +397,26 @@ mod tests {
         assert_eq!(strings.extra.len(), 0);
         assert_eq!(strings.intern_utf8(second), canonical);
         assert_eq!(strings.extra.len(), 0);
+        assert_eq!(strings.intern_utf8(first), canonical);
+        assert_eq!(strings.intern_utf8(second), canonical);
+        assert_eq!(strings.intern_wtf8(second.into()), canonical.into());
+    }
+
+    #[test]
+    fn canonical_lookup_lifetime() {
+        let allocator = Allocator::new();
+        let (lookup, canonical) = {
+            let mut ast = Ast::new("name name", &allocator);
+            let lookup = ast.string_lookup();
+            assert_eq!(lookup.get(b"name"), None);
+            let canonical = ast.intern_utf8(ast.source_slice(5, 9));
+            assert_eq!(lookup.get(b"name"), Some(canonical.into()));
+            ast.add_utf8(&"x".repeat(4096));
+            assert_eq!(ast.intern_utf8(ast.source_slice(0, 4)), canonical);
+            (lookup, canonical)
+        };
+        assert_eq!(lookup.get(b"name"), Some(canonical.into()));
+        assert_eq!(lookup.get(b"missing"), None);
+        assert_eq!(lookup.get(b""), Some(AstWtf8::EMPTY));
     }
 }

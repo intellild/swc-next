@@ -25,7 +25,8 @@ use swc_next_allocator::{
     vec::{ArenaIndexVec, ArenaVec},
 };
 use swc_next_ecma_ast::{
-    Ast, AstInternedUtf8, AstWtf8, Diagnostic, NodeId, ScopeId, SymbolId, VisitWith,
+    Ast, AstInternedUtf8, AstStringLookup, AstWtf8, Diagnostic, NodeId, ScopeId, SymbolId,
+    VisitWith,
 };
 
 use crate::{
@@ -112,12 +113,12 @@ impl SymbolName {
     }
 }
 
-type ScopeMap<'a> = ArenaHashMap<'a, &'a [u8], SymbolId>;
+type ScopeMap<'a> = ArenaHashMap<'a, AstWtf8, SymbolId>;
 type ScopeMaps<'a> = IndexSlice<ScopeId, [ScopeMap<'a>]>;
 // Most scopes have no var declarations hoisting through them.
 // Keep the var declaration, since its symbol may also contain functions.
 type HoistingMap<'a> =
-    Option<swc_next_allocator::boxed::Box<'a, ArenaHashMap<'a, &'a [u8], DeclarationId>>>;
+    Option<swc_next_allocator::boxed::Box<'a, ArenaHashMap<'a, AstWtf8, DeclarationId>>>;
 type Redeclarations<'a> = ArenaHashMap<'a, SymbolId, ArenaVec<'a, DeclarationId>>;
 
 /// JSX syntax whose implicit factory dependencies can be resolved by a consumer.
@@ -138,6 +139,7 @@ pub struct JsxUsage {
 /// indexes outside the arena-backed model.
 #[derive(Debug)]
 pub struct Semantic<'a> {
+    names: AstStringLookup<'a>,
     /// Every scope, indexed by [`ScopeId`].
     scopes: ScopeTree<'a>,
     jsx_usages: ArenaVec<'a, JsxUsage>,
@@ -464,13 +466,14 @@ impl<'a> Semantic<'a> {
     /// //               the function scope
     /// ```
     pub fn binding(&self, scope_id: ScopeId, name: &[u8]) -> Option<SymbolId> {
+        let key = self.names.get(name)?;
         self.scope_maps[scope_id]
-            .get(name)
+            .get(&key)
             .copied()
             .or_else(|| {
                 self.hoisting_variables[scope_id]
                     .as_deref()
-                    .and_then(|bindings| bindings.get(name).copied())
+                    .and_then(|bindings| bindings.get(&key).copied())
                     .map(|declaration| self.declarations[declaration].symbol)
             })
             .or_else(|| {
@@ -655,7 +658,7 @@ impl Iterator for ScopeIterator<'_> {
 }
 
 pub struct BindingIterator<'a> {
-    inner: Values<'a, &'a [u8], SymbolId>,
+    inner: Values<'a, AstWtf8, SymbolId>,
     source: Option<binder::TsSourceBindingIterator<'a>>,
 }
 

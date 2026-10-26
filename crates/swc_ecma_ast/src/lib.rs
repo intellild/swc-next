@@ -35,7 +35,7 @@ pub use generated::ast_node::*;
 pub use generated::ast_visitor::*;
 pub use node_id::{AstNode, ExtraDataId, ExtraDataValue, NodeId, SubRange};
 pub use semantic::{ReferenceId, ScopeId, SymbolId};
-pub use strings::{AstInternedUtf8, AstUtf8, AstWtf8};
+pub use strings::{AstInternedUtf8, AstStringLookup, AstUtf8, AstWtf8};
 pub use syntax::*;
 pub use visit::{TraverseAction, TraverseCtx, TraverseMutCtx};
 
@@ -313,6 +313,11 @@ impl<'a> Ast<'a> {
     #[inline]
     pub fn intern_wtf8(&self, value: AstWtf8) -> AstWtf8 {
         self.strings.intern_wtf8(value)
+    }
+
+    /// A read-only view for resolving textual queries to canonical ranges.
+    pub fn string_lookup(&self) -> AstStringLookup<'a> {
+        self.strings.lookup()
     }
 
     /// Borrows immutable string bytes for the source/allocator lifetime.
