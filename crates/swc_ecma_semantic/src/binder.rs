@@ -994,6 +994,7 @@ impl TsMemberIndex<'_> {
             .unwrap_or_default();
         let symbol = resolution.candidate()?;
         let target = TsValueTargetLookup {
+            names: self.names,
             locals: &self.local_exports,
             symbols,
             declarations,
@@ -1729,6 +1730,7 @@ impl TsExportLocal {
 }
 
 fn ts_exported_value(
+    names: AstStringLookup<'_>,
     locals: &TsLocalExportMap<'_>,
     symbols: &Symbols,
     declarations: &Declarations,
@@ -1739,14 +1741,11 @@ fn ts_exported_value(
     let first = symbols[lexical].declaration;
     let scope = declarations[first].scope;
     let target = locals.get(&(scope, name))?.exported_value()?;
-    (scope_maps[scope]
-        .get(&AstWtf8::from(symbols[lexical].name))
-        .copied()
-        == Some(lexical))
-    .then_some(target)
+    (scope_maps[scope].get(&names.get(name)?).copied() == Some(lexical)).then_some(target)
 }
 
 struct TsValueTargetLookup<'lookup, 'arena> {
+    names: AstStringLookup<'arena>,
     locals: &'lookup TsLocalExportMap<'arena>,
     symbols: &'lookup Symbols,
     declarations: &'lookup Declarations,
@@ -1766,6 +1765,7 @@ impl TsValueTargetLookup<'_, '_> {
             ReferenceSpace::Value | ReferenceSpace::Typeof
         ));
         let symbol = ts_exported_value(
+            self.names,
             self.locals,
             self.symbols,
             self.declarations,
@@ -4140,6 +4140,7 @@ impl<'a> SymbolTracker<'a> {
     /// symbol used for conflict checks or qualified namespace ownership.
     fn ts_exported_value(&self, lexical: SymbolId, name: &[u8]) -> Option<SymbolId> {
         ts_exported_value(
+            self.names,
             &self.ts_local_exports,
             &self.symbols,
             &self.declarations,
@@ -4583,6 +4584,7 @@ impl<'a> SymbolTracker<'a> {
             .unwrap_or_default();
         let hash = self.scope_maps[ScopeId::ROOT].hasher().hash_one(name);
         let value_targets = TsValueTargetLookup {
+            names: self.names,
             locals: &self.ts_local_exports,
             symbols: &self.symbols,
             declarations: &self.declarations,
@@ -4637,6 +4639,7 @@ impl<'a> SymbolTracker<'a> {
             .map(|aliases| aliases.spaces.as_slice())
             .unwrap_or_default();
         let target = TsValueTargetLookup {
+            names: self.names,
             locals: &self.ts_local_exports,
             symbols: &self.symbols,
             declarations: &self.declarations,
